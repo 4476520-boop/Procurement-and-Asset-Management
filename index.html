@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Asset Scanner</title>
+    <!-- Load the HTML5 QR Code library -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 20px; background-color: #f4f7f6; }
+        #reader { width: 100%; max-width: 500px; margin: 0 auto; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h2 { color: #333; }
+        #result-card { display: none; margin-top: 20px; padding: 15px; background: #e0f2f1; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+    <h2>Scan Asset Barcode</h2>
+    <div id="reader"></div>
+    
+    <div id="result-card">
+        <h3>Scan Successful!</h3>
+        <p>Asset Tag: <strong id="scanned-tag"></strong></p>
+        <p id="webhook-status">Sending to system...</p>
+    </div>
+
+    <script>
+        // 1. Grab parameters from the URL (so the webhook knows WHICH user is scanning)
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionToken = urlParams.get('session'); 
+
+        // 2. Define what happens when a barcode is found
+        function onScanSuccess(decodedText, decodedResult) {
+            // Stop scanning immediately after the first successful read
+            html5QrcodeScanner.clear();
+            
+            // Show the result UI
+            document.getElementById('result-card').style.display = 'block';
+            document.getElementById('scanned-tag').innerText = decodedText;
+
+            // 3. Fire the Webhook via POST request
+            // Replace this URL with your actual Infobip or n8n Webhook URL
+            const webhookUrl = "https://your-webhook-url-here.com/catch"; 
+
+            fetch(webhookUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    asset_barcode: decodedText,
+                    session_id: sessionToken,
+                    action: "status_update"
+                })
+            })
+            .then(response => {
+                if(response.ok) {
+                    document.getElementById('webhook-status').innerText = "System updated successfully! You can close this page.";
+                } else {
+                    document.getElementById('webhook-status').innerText = "Error updating system. Please try again.";
+                }
+            })
+            .catch(error => {
+                console.error("Webhook error:", error);
+                document.getElementById('webhook-status').innerText = "Network error. Check connection.";
+            });
+        }
+
+        // 4. Initialize the camera scanner UI
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", 
+            { fps: 10, qrbox: {width: 250, height: 150} }, // Wide rectangle optimized for barcodes
+            false
+        );
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+</body>
+</html>
