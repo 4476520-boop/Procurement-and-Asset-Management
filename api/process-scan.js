@@ -1,17 +1,16 @@
 const jwt = require('jsonwebtoken');
 
-export default async function handler(req, res) {
+module.exports = async function (req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { token, barcode } = req.body;
 
   try {
-    // 1. Decrypt and verify the token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { email, action } = decoded;
 
-    // 2. Locate the Asset in Ivanti
+    // 1. Locate the Asset in Ivanti
     const ivantiUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis?$filter=ivnt_AssetTag eq '${barcode}'&$top=1`;
     const getResponse = await fetch(ivantiUrl, {
       method: 'GET',
@@ -24,7 +23,7 @@ export default async function handler(req, res) {
     }
     const recId = getData.value[0].RecId;
 
-    // 3. Update the Asset in Ivanti
+    // 2. Update the Asset in Ivanti
     const patchUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis('${recId}')`;
     await fetch(patchUrl, {
       method: 'PATCH',
@@ -35,7 +34,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({ Status: action })
     });
 
-    // 4. Send Confirmation via Infobip
+    // 3. Send Confirmation via Infobip
     const infobipUrl = `https://${process.env.INFOBIP_BASE_URL}/messages-api/1/messages`;
     await fetch(infobipUrl, {
       method: 'POST',
@@ -55,7 +54,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
 
   } catch (error) {
-    console.error(error);
+    console.error("Process Scan Error:", error);
     return res.status(500).json({ error: 'Token invalid or server error' });
   }
-}
+};
