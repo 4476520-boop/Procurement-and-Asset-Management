@@ -25,51 +25,59 @@
     </div>
 
     <script>
-        // 1. Grab parameters from the URL (so the webhook knows WHICH user is scanning)
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionToken = urlParams.get('session'); 
-
-        // 2. Define what happens when a barcode is found
-        function onScanSuccess(decodedText, decodedResult) {
-            // Stop scanning immediately after the first successful read
-            html5QrcodeScanner.clear();
-            
-            // Show the result UI
-            document.getElementById('result-card').style.display = 'block';
-            document.getElementById('scanned-tag').innerText = decodedText;
-
-            // 3. Fire the Webhook via POST request
-            // Replace this URL with your actual Infobip or n8n Webhook URL
-            const webhookUrl = "https://your-webhook-url-here.com/catch"; 
-
-            fetch(webhookUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    asset_barcode: decodedText,
-                    session_id: sessionToken,
-                    action: "status_update"
-                })
-            })
-            .then(response => {
-                if(response.ok) {
-                    document.getElementById('webhook-status').innerText = "System updated successfully! You can close this page.";
-                } else {
-                    document.getElementById('webhook-status').innerText = "Error updating system. Please try again.";
-                }
-            })
-            .catch(error => {
-                console.error("Webhook error:", error);
-                document.getElementById('webhook-status').innerText = "Network error. Check connection.";
-            });
-        }
-
-        // 4. Initialize the camera scanner UI
+        // 1. Initialize the camera scanner UI
         let html5QrcodeScanner = new Html5QrcodeScanner(
             "reader", 
             { fps: 10, qrbox: {width: 250, height: 150} }, // Wide rectangle optimized for barcodes
             false
         );
+
+        // 2. Define what happens when a barcode is found
+        function onScanSuccess(decodedText) {
+            // Stop the scanner so it doesn't fire 100 times
+            html5QrcodeScanner.clear();
+
+            // Reveal the result card and show the barcode string
+            document.getElementById('result-card').style.display = 'block';
+            document.getElementById('scanned-tag').innerText = decodedText;
+
+            // Extract the secure token from the URL (?t=...)
+            const urlParams = new URLSearchParams(window.location.search);
+            const secureToken = urlParams.get('t');
+
+            if (!secureToken) {
+                document.getElementById('webhook-status').innerText = "Security token missing. Please restart from the chatbot.";
+                document.getElementById('webhook-status').style.color = "red";
+                return;
+            }
+
+            // Send payload to the Vercel Proxy
+            fetch('/api/process-scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    barcode: decodedText, 
+                    token: secureToken 
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('webhook-status').innerText = "Database updated! Check your chat widget.";
+                    document.getElementById('webhook-status').style.color = "green";
+                } else {
+                    document.getElementById('webhook-status').innerText = "Error updating database. " + (data.error || "");
+                    document.getElementById('webhook-status').style.color = "red";
+                }
+            })
+            .catch(error => {
+                console.error("Webhook error:", error);
+                document.getElementById('webhook-status').innerText = "Network error. Check connection.";
+                document.getElementById('webhook-status').style.color = "red";
+            });
+        }
+
+        // 3. Start the scanner
         html5QrcodeScanner.render(onScanSuccess);
     </script>
 </body>
