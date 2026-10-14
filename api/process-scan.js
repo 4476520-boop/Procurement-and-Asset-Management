@@ -10,13 +10,20 @@ module.exports = async function (req, res) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { email, action } = decoded;
 
-    // 1. Locate the Asset in Ivanti
-    const ivantiUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis?$filter=SerialNumber eq '${barcode.trim()}'&$top=1`;
+    // 1. Locate the Asset in Ivanti (WITH URL ENCODING)
+    const cleanBarcode = barcode.trim();
+    const filterQuery = encodeURIComponent(`SerialNumber eq '${cleanBarcode}'`);
+    const ivantiUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis?$filter=${filterQuery}&$top=1`;
+    
+    console.log("Searching Ivanti URL:", ivantiUrl);
+
     const getResponse = await fetch(ivantiUrl, {
       method: 'GET',
       headers: { 'Authorization': process.env.IVANTI_API_KEY }
     });
     const getData = await getResponse.json();
+    
+    console.log("Ivanti Search Response:", JSON.stringify(getData));
     
     if (!getData.value || getData.value.length === 0) {
       return res.status(404).json({ error: 'Asset not found in database' });
