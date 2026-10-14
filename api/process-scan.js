@@ -61,11 +61,17 @@ module.exports = async function (req, res) {
     const assetTag = asset.AssetTag || asset.ivnt_AssetTag || 'Unknown Tag';
 
     // 3. Update the Asset in Ivanti (Status + Ownership)
+    // 3. Update the Asset in Ivanti (Status + Ownership + Storage Space)
     const patchAssetBody = { Status: action };
     
-    // CRITICAL FIX: Use the empty string trick from your old code to clear the user
+    // CRITICAL FIX: Clear the user AND set the Storage Space for returns
     if (isReturn) {
         patchAssetBody.ivnt_AssignedUser = ""; 
+        
+        // Satisfy Ivanti's strict Storage Space requirement
+        patchAssetBody.ivnt_StorageSpaceLink_RecID = "69D5721AB0AB4A9DB6CEC3CBD6673B19";
+        patchAssetBody.ivnt_StorageSpaceLink_Category = "ivnt_StorageSpace";
+
     } else if (assignedUserRecId) {
         patchAssetBody.ivnt_AssignedUser = assignedUserRecId; 
     }
@@ -80,7 +86,6 @@ module.exports = async function (req, res) {
       body: JSON.stringify(patchAssetBody)
     });
 
-    // We will keep the error catcher just in case!
     if (!patchRes.ok) {
         const errorText = await patchRes.text();
         console.error(`Ivanti PATCH Failed (${patchRes.status}):`, errorText);
