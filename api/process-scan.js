@@ -7,10 +7,11 @@ module.exports = async function (req, res) {
   const { token, barcode } = req.body;
 
   try {
+    // Left uppercase as requested
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { email, action } = decoded;
 
-    // 1. Locate the Asset in Ivanti (WITH URL ENCODING)
+    // 1. Locate the Asset in Ivanti (lowercase API key)
     const cleanBarcode = barcode.trim();
     const filterQuery = encodeURIComponent(`SerialNumber eq '${cleanBarcode}'`);
     const ivantiUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis?$filter=${filterQuery}&$top=1`;
@@ -19,7 +20,7 @@ module.exports = async function (req, res) {
 
     const getResponse = await fetch(ivantiUrl, {
       method: 'GET',
-      headers: { 'Authorization': process.env.IVANTI_API_KEY }
+      headers: { 'Authorization': process.env.ivanti_api_key }
     });
     const getData = await getResponse.json();
     
@@ -30,23 +31,23 @@ module.exports = async function (req, res) {
     }
     const recId = getData.value[0].RecId;
 
-    // 2. Update the Asset in Ivanti
+    // 2. Update the Asset in Ivanti (lowercase API key)
     const patchUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis('${recId}')`;
     await fetch(patchUrl, {
       method: 'PATCH',
       headers: {
-        'Authorization': process.env.IVANTI_API_KEY,
+        'Authorization': process.env.ivanti_api_key,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ Status: action })
     });
 
-    // 3. Send Confirmation via Infobip
-    const infobipUrl = `https://${process.env.INFOBIP_BASE_URL}/messages-api/1/messages`;
+    // 3. Send Confirmation via Infobip (lowercase base URL and API key)
+    const infobipUrl = `https://${process.env.infobip_base_url}/messages-api/1/messages`;
     await fetch(infobipUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `App ${process.env.INFOBIP_API_KEY}`,
+        'Authorization': `App ${process.env.infobip_api_key}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
