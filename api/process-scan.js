@@ -10,13 +10,16 @@ module.exports = async function (req, res) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const { action, target_user } = decoded;
 
-    let assignedEmail = target_user.trim();
+    let assignedEmail = target_user ? target_user.trim() : '';
     let ticketNumber = null;
     let assignedUserRecId = null;
     let ticketRecId = null;
 
-    // 1. DYNAMIC LOOKUP: Pull Ticket & User ID
-    if (!assignedEmail.includes('@')) {
+    // Define if this is a return flow based on the action
+    const isReturn = action === 'In Stock' || action === 'Returned';
+
+    // 1. DYNAMIC LOOKUP: Pull Ticket & User ID (ONLY if issuing an asset)
+    if (!isReturn && assignedEmail && !assignedEmail.includes('@')) {
       ticketNumber = assignedEmail;
       
       const ticketQuery = encodeURIComponent(`ServiceReqNumber eq ${ticketNumber}`);
@@ -30,7 +33,6 @@ module.exports = async function (req, res) {
       
       if (ticketData.value && ticketData.value.length > 0) {
         assignedEmail = ticketData.value[0].Email || assignedEmail;
-        // Capture the 32-character User ID and the Ticket ID
         assignedUserRecId = ticketData.value[0].ProfileLink_RecID;
         ticketRecId = ticketData.value[0].RecId;
       }
@@ -60,8 +62,11 @@ module.exports = async function (req, res) {
 
     // 3. Update the Asset in Ivanti (Status + Ownership)
     const patchAssetBody = { Status: action };
-    if (assignedUserRecId) {
-        // Use the RecId to successfully assign ownership
+    
+    // CRITICAL FIX: Clear the user if returning, set the user if assigning
+    if (isReturn) {
+        patchAssetBody.ivnt_AssignedUser = null; 
+    } else if (assignedUserRecId) {
         patchAssetBody.ivnt_AssignedUser = assignedUserRecId; 
     }
 
@@ -75,9 +80,8 @@ module.exports = async function (req, res) {
       body: JSON.stringify(patchAssetBody)
     });
 
-    // 4. Update the Service Request (Status + Fulfillment Note)
-    if (ticketRecId) {
-        // Change ticket status to Fulfilled
+    // 4. Update the Service Request (ONLY if issuing)
+    if (!isReturn && ticketRecId) {
         const patchTicketUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/ServiceReqs('${ticketRecId}')`;
         await fetch(patchTicketUrl, {
           method: 'PATCH',
@@ -85,11 +89,9 @@ module.exports = async function (req, res) {
             'Authorization': process.env.ivanti_api_key,
             'Content-Type': 'application/json'
           },
-          // Note: If your system uses a different status name (e.g., 'Closed' or 'Completed'), update it here
           body: JSON.stringify({ Status: 'Fulfilled' })
         });
 
-        // Add a permanent Journal Note with the hardware details
         const journalUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/Journal__Notes`;
         await fetch(journalUrl, {
           method: 'POST',
@@ -106,8 +108,8 @@ module.exports = async function (req, res) {
         });
     }
 
-    // 5. Send Collection Email via Infobip
-    if (assignedEmail && assignedEmail.includes('@')) {
+    // 5. Send Collection Email via Infobip (ONLY if issuing)
+    if (!isReturn && assignedEmail && assignedEmail.includes('@')) {
         const infobipEmailUrl = `https://${process.env.infobip_base_url}/email/3/send`;
         
         const formData = new FormData();
