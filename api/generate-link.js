@@ -1,26 +1,33 @@
 const jwt = require('jsonwebtoken');
 
-module.exports = function (req, res) {
-  // Handle CORS preflight
+module.exports = async function (req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { email, action } = req.body;
+  // 1. Extract the new target_user variable from the Infobip payload
+  const { email, action, target_user } = req.body;
 
   if (!email || !action) {
-    return res.status(400).json({ error: 'Missing email or action' });
+    return res.status(400).json({ error: 'Missing required fields' });
   }
 
   try {
-    // Encrypt the data into a token that expires in 1 hour
-    const token = jwt.sign({ email, action }, process.env.JWT_SECRET, { expiresIn: '1h' });
-    
-    // Construct the secure URL
+    // 2. Encrypt target_user inside the token alongside the admin email and action
+    const token = jwt.sign(
+      { 
+        email, 
+        action, 
+        target_user: target_user || 'None' 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
     const secureUrl = `https://scanner.procuri.tech/?t=${token}`;
 
     return res.status(200).json({ secure_url: secureUrl });
   } catch (error) {
-    console.error("JWT Signing Error:", error);
-    return res.status(500).json({ error: 'Internal Server Error during token generation' });
+    console.error("Token Generation Error:", error);
+    return res.status(500).json({ error: 'Failed to generate token' });
   }
 };
