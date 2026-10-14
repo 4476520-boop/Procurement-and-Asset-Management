@@ -12,15 +12,15 @@ module.exports = async function (req, res) {
 
     let assignedEmail = target_user.trim();
     let ticketNumber = null;
+    let assignedUserRecId = null;
+    let ticketRecId = null;
 
-    // 1. DYNAMIC LOOKUP: If input is a Ticket Number (no '@' symbol), pull the email from Ivanti
+    // 1. DYNAMIC LOOKUP: Pull Ticket & User ID
     if (!assignedEmail.includes('@')) {
       ticketNumber = assignedEmail;
       
       const ticketQuery = encodeURIComponent(`ServiceReqNumber eq ${ticketNumber}`);
       const ticketUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/ServiceReqs?$filter=${ticketQuery}&$top=1`;
-      
-      console.log("Searching Ticket URL:", ticketUrl);
       
       const ticketRes = await fetch(ticketUrl, {
         method: 'GET',
@@ -29,11 +29,10 @@ module.exports = async function (req, res) {
       const ticketData = await ticketRes.json();
       
       if (ticketData.value && ticketData.value.length > 0) {
-        // Updated to use exactly your 'Email' field
         assignedEmail = ticketData.value[0].Email || assignedEmail;
-        console.log("Extracted email from ticket:", assignedEmail);
-      } else {
-        console.log("Warning: Service Request not found in Ivanti.");
+        // Capture the 32-character User ID and the Ticket ID
+        assignedUserRecId = ticketData.value[0].ProfileLink_RecID;
+        ticketRecId = ticketData.value[0].RecId;
       }
     }
 
@@ -59,7 +58,13 @@ module.exports = async function (req, res) {
     const model = asset.Model || 'Device';
     const assetTag = asset.AssetTag || asset.ivnt_AssetTag || 'Unknown Tag';
 
-    // 3. Update the Asset in Ivanti (Using your exact ivnt_AssignedUser field)
+    // 3. Update the Asset in Ivanti (Status + Ownership)
+    const patchAssetBody = { Status: action };
+    if (assignedUserRecId) {
+        // Use the RecId to successfully assign ownership
+        patchAssetBody.ivnt_AssignedUser = assignedUserRecId; 
+    }
+
     const patchUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis('${recId}')`;
     await fetch(patchUrl, {
       method: 'PATCH',
@@ -67,22 +72,49 @@ module.exports = async function (req, res) {
         'Authorization': process.env.ivanti_api_key,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ 
-        Status: action,
-        ivnt_AssignedUser: assignedEmail 
-      })
+      body: JSON.stringify(patchAssetBody)
     });
 
-    // 4. Send Collection Email via Infobip
+    // 4. Update the Service Request (Status + Fulfillment Note)
+    if (ticketRecId) {
+        // Change ticket status to Fulfilled
+        const patchTicketUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/ServiceReqs('${ticketRecId}')`;
+        await fetch(patchTicketUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': process.env.ivanti_api_key,
+            'Content-Type': 'application/json'
+          },
+          // Note: If your system uses a different status name (e.g., 'Closed' or 'Completed'), update it here
+          body: JSON.stringify({ Status: 'Fulfilled' })
+        });
+
+        // Add a permanent Journal Note with the hardware details
+        const journalUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/Journal__Notes`;
+        await fetch(journalUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': process.env.ivanti_api_key,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ParentLink_Category: 'ServiceReq',
+            ParentLink_RecID: ticketRecId,
+            Subject: 'Hardware Asset Fulfilled via Barcode Scan',
+            NotesBody: `Asset successfully assigned.\n\nManufacturer: ${manufacturer}\nModel: ${model}\nSerial Number: ${cleanBarcode}\nAsset Tag: ${assetTag}`
+          })
+        });
+    }
+
+    // 5. Send Collection Email via Infobip
     if (assignedEmail && assignedEmail.includes('@')) {
         const infobipEmailUrl = `https://${process.env.infobip_base_url}/email/3/send`;
         
         const formData = new FormData();
-        formData.append('from', 'IT Support <it-support@procuri.tech>'); 
+        formData.append('from', 'IT Support <it-support@yourdomain.com>'); 
         formData.append('to', assignedEmail);
         formData.append('subject', 'Hardware Ready for Collection');
         
-        // Dynamically includes the ticket number in the email if one was provided
         const ticketText = ticketNumber ? ` for ticket ${ticketNumber}` : '';
         formData.append('text', `Your IT hardware request${ticketText} has been fulfilled.\n\nAn ${manufacturer} ${model} (Asset Tag: ${assetTag}) is ready for collection at the IT Desk.`);
 
