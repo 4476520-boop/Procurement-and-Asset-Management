@@ -63,15 +63,15 @@ module.exports = async function (req, res) {
     // 3. Update the Asset in Ivanti (Status + Ownership)
     const patchAssetBody = { Status: action };
     
-    // CRITICAL FIX: Clear the user if returning, set the user if assigning
+    // CRITICAL FIX: Use the empty string trick from your old code to clear the user
     if (isReturn) {
-        patchAssetBody.ivnt_AssignedUser = null; 
+        patchAssetBody.ivnt_AssignedUser = ""; 
     } else if (assignedUserRecId) {
         patchAssetBody.ivnt_AssignedUser = assignedUserRecId; 
     }
 
     const patchUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis('${recId}')`;
-    await fetch(patchUrl, {
+    const patchRes = await fetch(patchUrl, {
       method: 'PATCH',
       headers: {
         'Authorization': process.env.ivanti_api_key,
@@ -80,6 +80,12 @@ module.exports = async function (req, res) {
       body: JSON.stringify(patchAssetBody)
     });
 
+    // We will keep the error catcher just in case!
+    if (!patchRes.ok) {
+        const errorText = await patchRes.text();
+        console.error(`Ivanti PATCH Failed (${patchRes.status}):`, errorText);
+        return res.status(patchRes.status).json({ error: 'Ivanti update failed' });
+    }
     // 4. Update the Service Request (ONLY if issuing)
     if (!isReturn && ticketRecId) {
         const patchTicketUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/ServiceReqs('${ticketRecId}')`;
