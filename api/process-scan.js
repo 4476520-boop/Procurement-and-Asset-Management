@@ -11,7 +11,7 @@ module.exports = async function (req, res) {
     const { email, action } = decoded;
 
     // 1. Locate the Asset in Ivanti
-    const ivantiUrl = `const ivantiUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis?$filter=SerialNumber eq '${barcode}'&$top=1`;
+    const ivantiUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis?$filter=SerialNumber eq '${barcode}'&$top=1`;
     const getResponse = await fetch(ivantiUrl, {
       method: 'GET',
       headers: { 'Authorization': process.env.IVANTI_API_KEY }
