@@ -23,7 +23,7 @@ module.exports = async function (req, res) {
       { expiresIn: '1h' }
     );
 
-    const secureUrl = `https://scanner.procuri.tech/?t=${token}`;
+    const secureUrl = `https://scanner.procuri.tech/scanner.html?t=${token}`;
 
     return res.status(200).json({ secure_url: secureUrl });
   } catch (error) {
