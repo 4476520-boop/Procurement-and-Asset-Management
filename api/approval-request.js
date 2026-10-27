@@ -9,13 +9,15 @@ module.exports = async function (req, res) {
   const templateId = decision === 'approved' ? '205000000088607' : '205000000088608';
 
   try {
-    // 1. Native Node.js URL encoding - exactly how Postman formats spaces safely
-    const params = new URLSearchParams();
-    params.append('$filter', `ServiceReqNumber eq ${reqId}`);
+    // 1. URL SANITIZATION: This guarantees we never get a "fetch failed" (https://https://) error
+    const cleanIvantiTenant = (process.env.ivanti_tenant || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-    const searchUrl = `https://${process.env.ivanti_tenant}/api/odata/businessobject/ServiceReqs?${params.toString()}`;
+    // 2. SAFE ODATA QUERY: URL-encode the spaces exactly like Postman (%20)
+    const filterQuery = encodeURIComponent(`ServiceReqNumber eq ${reqId}`);
+    const searchUrl = `https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=${filterQuery}`;
 
-    // 2. Search Ivanti (Rolling back to the exact auth structure that gave us the 200 OK)
+    // 3. SEARCH IVANTI (Using the exact Auth structure that previously gave us the 200 OK)
     const searchResponse = await fetch(searchUrl, {
       method: 'GET',
       headers: {
@@ -37,8 +39,8 @@ module.exports = async function (req, res) {
 
     const internalRecId = searchData.value[0].RecId;
 
-    // 3. Update the Ticket Status using the internal RecId
-    const ivantiResponse = await fetch(`https://${process.env.ivanti_tenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
+    // 4. UPDATE THE TICKET STATUS
+    const ivantiResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
       method: 'PATCH',
       headers: {
         'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
@@ -54,14 +56,14 @@ module.exports = async function (req, res) {
       throw new Error(`Ivanti PATCH failed. Status: ${ivantiResponse.status} | Details: ${errorText}`);
     }
 
-    // 4. Send Employee Email
+    // 5. SEND NOTIFICATION EMAIL
     if (user_email) {
       const emailFormData = new FormData();
       emailFormData.append("from", "IT Service Desk <notifications@procuri.tech>");
       emailFormData.append("to", user_email);
       emailFormData.append("templateId", templateId);
 
-      await fetch(`https://${process.env.infobip_base_url}/email/3/send`, {
+      await fetch(`https://${cleanInfobipUrl}/email/3/send`, {
         method: 'POST',
         headers: {
           'Authorization': `App ${process.env.infobip_api_key}`
@@ -70,7 +72,7 @@ module.exports = async function (req, res) {
       });
     }
 
-    // 5. Success Screen
+    // 6. SUCCESS SCREEN
     const htmlResponse = `
       <html>
         <head><title>Decision Logged</title></head>
@@ -86,7 +88,8 @@ module.exports = async function (req, res) {
     return res.status(200).send(htmlResponse);
 
   } catch (error) {
-    console.error("Webhook Update Error:", error.message);
+    // Appending error.message gives us much cleaner logs without burying the lead
+    console.error("Webhook Update Error:", error.message || error);
     return res.status(500).send('Failed to process the request. Check Vercel logs.');
   }
 };
