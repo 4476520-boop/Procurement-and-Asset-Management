@@ -6,7 +6,7 @@ module.exports = async function (req, res) {
   }
 
   const cleanReqId = reqId.trim();
-  const ivantiStatus = decision === 'approved' ? 'Approved' : 'Denied';
+  const ivantiStatus = decision === 'approved' ? 'Approved' : 'Approval Rejected';
   const templateId = decision === 'approved' ? '205000000088607' : '205000000088608';
 
   try {
