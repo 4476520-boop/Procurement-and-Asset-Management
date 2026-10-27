@@ -9,16 +9,11 @@ module.exports = async function (req, res) {
   const templateId = decision === 'approved' ? '205000000088607' : '205000000088608';
 
   try {
-    // 1. Bulletproof the environment variables by stripping any accidental https:// prefixes
     const cleanIvantiTenant = (process.env.ivanti_tenant || '').replace(/^https?:\/\//, '');
-    const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, ''); // Also removes trailing slashes
+    const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-    if (!cleanIvantiTenant || !cleanInfobipUrl) {
-      throw new Error("Missing Ivanti Tenant or Infobip Base URL in environment variables.");
-    }
-
-    // 2. Search Ivanti to map the human-readable ServiceReqNumber to the internal RecId
-    const searchResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=ServiceReqNumber eq '${reqId}'`, {
+    // 1. Search Ivanti for the Ticket (QUOTES REMOVED FROM reqId)
+    const searchResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=ServiceReqNumber eq ${reqId}`, {
       method: 'GET',
       headers: {
         'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
@@ -26,16 +21,26 @@ module.exports = async function (req, res) {
       }
     });
 
-    const searchData = await searchResponse.json();
+    const rawSearchData = await searchResponse.text();
+    let searchData;
+    try {
+      searchData = JSON.parse(rawSearchData);
+    } catch (e) {
+      throw new Error(`Ivanti returned non-JSON response. Status: ${searchResponse.status}. Body: ${rawSearchData}`);
+    }
 
-    if (!searchResponse.ok || !searchData.value || searchData.value.length === 0) {
-      throw new Error(`Could not find ticket number ${reqId} in Ivanti.`);
+    if (!searchResponse.ok) {
+      throw new Error(`Ivanti API Rejected the Search. Status: ${searchResponse.status} | Details: ${JSON.stringify(searchData)}`);
+    }
+    
+    if (!searchData.value || searchData.value.length === 0) {
+      throw new Error(`Ticket 200 OK, but list is empty. Ivanti returned: ${JSON.stringify(searchData)}`);
     }
 
     const internalRecId = searchData.value[0].RecId;
 
-    // 3. Update ONLY the Status field in Ivanti using the internal RecId
-    const ivantiResponse = await fetch(`https://${cleanIvantiTenant}.ivanticloud.com/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
+    // 2. Update the Ticket Status field
+    const ivantiResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
       method: 'PATCH',
       headers: {
         'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
@@ -47,10 +52,11 @@ module.exports = async function (req, res) {
     });
 
     if (!ivantiResponse.ok) {
-      throw new Error(`Ivanti API PATCH failed with status: ${ivantiResponse.status}`);
+      const errorBody = await ivantiResponse.text();
+      throw new Error(`Ivanti PATCH failed. Status: ${ivantiResponse.status} | Details: ${errorBody}`);
     }
 
-    // 4. Send the outcome email back to the original requester
+    // 3. Send Employee Email
     if (user_email) {
       const emailFormData = new FormData();
       emailFormData.append("from", "IT Service Desk <notifications@procuri.tech>");
@@ -66,7 +72,7 @@ module.exports = async function (req, res) {
       });
     }
 
-    // 5. Return success screen to the manager
+    // 4. Success Screen
     const htmlResponse = `
       <html>
         <head><title>Decision Logged</title></head>
@@ -82,7 +88,7 @@ module.exports = async function (req, res) {
     return res.status(200).send(htmlResponse);
 
   } catch (error) {
-    console.error("Webhook Update Error:", error);
-    return res.status(500).send('Failed to process the request. Please check the logs.');
+    console.error("Webhook Update Error:", error.message);
+    return res.status(500).send('Failed to process the request. Check Vercel logs for exact Ivanti error.');
   }
 };
