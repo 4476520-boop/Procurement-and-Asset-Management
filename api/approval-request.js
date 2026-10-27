@@ -9,16 +9,16 @@ module.exports = async function (req, res) {
   const templateId = decision === 'approved' ? '205000000088607' : '205000000088608';
 
   try {
-    // 1. URL SANITIZATION: This guarantees we never get a "fetch failed" (https://https://) error
-    const cleanIvantiTenant = (process.env.ivanti_tenant || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
-    const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+    // 1. Bulletproof the environment variables by stripping any accidental https:// prefixes
+    const cleanIvantiTenant = (process.env.ivanti_tenant || '').replace(/^https?:\/\//, '');
+    const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, ''); // Also removes trailing slashes
 
-    // 2. SAFE ODATA QUERY: URL-encode the spaces exactly like Postman (%20)
-    const filterQuery = encodeURIComponent(`ServiceReqNumber eq ${reqId}`);
-    const searchUrl = `https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=${filterQuery}`;
+    if (!cleanIvantiTenant || !cleanInfobipUrl) {
+      throw new Error("Missing Ivanti Tenant or Infobip Base URL in environment variables.");
+    }
 
-    // 3. SEARCH IVANTI (Using the exact Auth structure that previously gave us the 200 OK)
-    const searchResponse = await fetch(searchUrl, {
+    // 2. Search Ivanti to map the human-readable ServiceReqNumber to the internal RecId
+    const searchResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=ServiceReqNumber eq ${reqId}`, {
       method: 'GET',
       headers: {
         'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
@@ -26,20 +26,15 @@ module.exports = async function (req, res) {
       }
     });
 
-    if (!searchResponse.ok) {
-      const errorText = await searchResponse.text();
-      throw new Error(`Ivanti API Rejected Search. Status: ${searchResponse.status} | Details: ${errorText}`);
-    }
-
     const searchData = await searchResponse.json();
 
-    if (!searchData.value || searchData.value.length === 0) {
-      throw new Error(`Ticket 200 OK, but list is empty. Checked ID: ${reqId}`);
+    if (!searchResponse.ok || !searchData.value || searchData.value.length === 0) {
+      throw new Error(`Could not find ticket number ${reqId} in Ivanti.`);
     }
 
     const internalRecId = searchData.value[0].RecId;
 
-    // 4. UPDATE THE TICKET STATUS
+    // 3. Update ONLY the Status field in Ivanti using the internal RecId
     const ivantiResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
       method: 'PATCH',
       headers: {
@@ -52,11 +47,10 @@ module.exports = async function (req, res) {
     });
 
     if (!ivantiResponse.ok) {
-      const errorText = await ivantiResponse.text();
-      throw new Error(`Ivanti PATCH failed. Status: ${ivantiResponse.status} | Details: ${errorText}`);
+      throw new Error(`Ivanti API PATCH failed with status: ${ivantiResponse.status}`);
     }
 
-    // 5. SEND NOTIFICATION EMAIL
+    // 4. Send the outcome email back to the original requester
     if (user_email) {
       const emailFormData = new FormData();
       emailFormData.append("from", "IT Service Desk <notifications@procuri.tech>");
@@ -72,7 +66,7 @@ module.exports = async function (req, res) {
       });
     }
 
-    // 6. SUCCESS SCREEN
+    // 5. Return success screen to the manager
     const htmlResponse = `
       <html>
         <head><title>Decision Logged</title></head>
@@ -88,8 +82,7 @@ module.exports = async function (req, res) {
     return res.status(200).send(htmlResponse);
 
   } catch (error) {
-    // Appending error.message gives us much cleaner logs without burying the lead
-    console.error("Webhook Update Error:", error.message || error);
-    return res.status(500).send('Failed to process the request. Check Vercel logs.');
+    console.error("Webhook Update Error:", error);
+    return res.status(500).send('Failed to process the request. Please check the logs.');
   }
 };
