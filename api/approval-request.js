@@ -18,7 +18,7 @@ module.exports = async function (req, res) {
     }
 
     // 2. Search Ivanti to map the human-readable ServiceReqNumber to the internal RecId
-    const searchResponse = await fetch(`https://${cleanIvantiTenant}.ivanticloud.com/api/odata/businessobject/ServiceReqs?$filter=ServiceReqNumber eq '${reqId}'`, {
+    const searchResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=ServiceReqNumber eq '${reqId}'`, {
       method: 'GET',
       headers: {
         'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
