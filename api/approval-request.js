@@ -25,11 +25,8 @@ module.exports = async function (req, res) {
 
     const searchResponse = await fetch(searchUrl, {
       method: 'GET',
-      headers: {
-        'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
-        'Content-Type': 'application/json'
-      }
-    });
+      headers: { 'Authorization': process.env.ivanti_api_key }
+      });
 
     const searchData = await searchResponse.json();
 
@@ -44,7 +41,7 @@ module.exports = async function (req, res) {
     const ivantiResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
       method: 'PATCH',
       headers: {
-        'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
+        'Authorization': process.env.ivanti_api_key,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
