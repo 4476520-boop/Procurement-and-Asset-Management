@@ -1,40 +1,53 @@
 module.exports = async function (req, res) {
-  // 1. Extract parameters from the URL query
-  const { decision, user_email, reqId, requester_email } = req.query;
+  // 1. Extract parameters from the email click
+  const { decision, reqId, user_email } = req.query;
 
   if (!decision || !reqId) {
     return res.status(400).send('Missing required approval parameters.');
   }
 
-  // 2. Map the decision to the specific status text Ivanti expects
   const ivantiStatus = decision === 'approved' ? 'Approved' : 'Denied';
-  
-  // 3. Assign the correct Infobip template ID for the requester email
   const templateId = decision === 'approved' ? '205000000088607' : '205000000088608';
 
   try {
-    // 4. Fire the direct PATCH request to the Ivanti Neurons REST API
-    const ivantiResponse = await fetch(`https://${process.env.ivanti_tenant}.ivanticloud.com/api/odata/businessobject/ServiceReqs('${reqId}')`, {
+    // 2. Search Ivanti to map the human-readable ServiceReqNumber to the internal RecId
+    const searchResponse = await fetch(`https://${process.env.ivanti_tenant}.ivanticloud.com/api/odata/businessobject/ServiceReqs?$filter=ServiceReqNumber eq '${reqId}'`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const searchData = await searchResponse.json();
+
+    if (!searchResponse.ok || !searchData.value || searchData.value.length === 0) {
+      throw new Error(`Could not find ticket number ${reqId} in Ivanti.`);
+    }
+
+    const internalRecId = searchData.value[0].RecId;
+
+    // 3. Update ONLY the Status field in Ivanti using the internal RecId
+    const ivantiResponse = await fetch(`https://${process.env.ivanti_tenant}.ivanticloud.com/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
       method: 'PATCH',
       headers: {
         'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        Status: ivantiStatus,
-        ApprovalReason: `Decision logged by ${user_email || 'Manager'} via automated workflow.`
+        Status: ivantiStatus
       })
     });
 
     if (!ivantiResponse.ok) {
-      throw new Error(`Ivanti API failed with status: ${ivantiResponse.status}`);
+      throw new Error(`Ivanti API PATCH failed with status: ${ivantiResponse.status}`);
     }
 
-    // 5. Trigger the Requester Notification Email via Infobip (if an email was provided)
-    if (requester_email) {
+    // 4. Send the outcome email back to the original requester
+    if (user_email) {
       const emailFormData = new FormData();
       emailFormData.append("from", "IT Service Desk <notifications@procuri.tech>");
-      emailFormData.append("to", requester_email);
+      emailFormData.append("to", user_email);
       emailFormData.append("templateId", templateId);
 
       await fetch(`https://${process.env.infobip_base_url}/email/3/send`, {
@@ -46,7 +59,7 @@ module.exports = async function (req, res) {
       });
     }
 
-    // 6. Return a simple HTML success page back to the manager's browser
+    // 5. Return success screen to the manager
     const htmlResponse = `
       <html>
         <head><title>Decision Logged</title></head>
@@ -63,6 +76,6 @@ module.exports = async function (req, res) {
 
   } catch (error) {
     console.error("Webhook Update Error:", error);
-    return res.status(500).send('Failed to process the request. Please contact the IT administrator.');
+    return res.status(500).send('Failed to process the request. Please check the logs.');
   }
 };
