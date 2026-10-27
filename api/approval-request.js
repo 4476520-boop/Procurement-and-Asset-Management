@@ -1,9 +1,5 @@
 module.exports = async function (req, res) {
-  // 1. SANITIZE INPUTS: This is critical. Email templates often inject hidden newlines.
-  // A hidden newline in the URL breaks the HTTP headers, causing the exact 401 error.
-  const decision = (req.query.decision || '').trim().toLowerCase();
-  const reqId = (req.query.reqId || '').trim(); 
-  const user_email = (req.query.user_email || '').trim();
+  const { decision, reqId, user_email } = req.query;
 
   if (!decision || !reqId) {
     return res.status(400).send('Missing required approval parameters.');
@@ -13,81 +9,68 @@ module.exports = async function (req, res) {
   const templateId = decision === 'approved' ? '205000000088607' : '205000000088608';
 
   try {
-    // 2. SANITIZE ENVIRONMENT VARIABLES: Strip accidental spaces or slashes
-    const cleanIvantiTenant = (process.env.ivanti_tenant || '').replace(/^https?:\/\//, '').replace(/\/$/, '').trim();
-    const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '').trim();
-    const cleanApiKey = (process.env.ivanti_api_key || '').trim();
+    // 1. Native Node.js URL encoding - exactly how Postman formats spaces safely
+    const params = new URLSearchParams();
+    params.append('$filter', `ServiceReqNumber eq ${reqId}`);
 
-    if (!cleanApiKey) {
-      throw new Error("Missing Ivanti API Key in Vercel environment variables.");
-    }
+    const searchUrl = `https://${process.env.ivanti_tenant}/api/odata/businessobject/ServiceReqs?${params.toString()}`;
 
-    // 3. CONSTRUCT PRECISE URL: Replace spaces with %20 but leave $ literal for OData
-    const filterString = `ServiceReqNumber eq ${reqId}`.replace(/ /g, '%20');
-    const searchUrl = `https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=${filterString}`;
-
-    // Explicitly adding the Accept header to perfectly mimic Postman
-    const ivantiHeaders = {
-      'Authorization': `rest_api_key ${cleanApiKey}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json' 
-    };
-
-    // 4. SEARCH IVANTI
+    // 2. Search Ivanti (Rolling back to the exact auth structure that gave us the 200 OK)
     const searchResponse = await fetch(searchUrl, {
       method: 'GET',
-      headers: ivantiHeaders
+      headers: {
+        'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
+        'Content-Type': 'application/json'
+      }
     });
 
-    const rawSearchData = await searchResponse.text();
-    let searchData;
-    try {
-      searchData = JSON.parse(rawSearchData);
-    } catch (e) {
-      throw new Error(`Ivanti returned non-JSON response. Status: ${searchResponse.status}. Body: ${rawSearchData}`);
+    if (!searchResponse.ok) {
+      const errorText = await searchResponse.text();
+      throw new Error(`Ivanti API Rejected Search. Status: ${searchResponse.status} | Details: ${errorText}`);
     }
 
-    if (!searchResponse.ok) {
-      throw new Error(`Ivanti API Rejected the Search. Status: ${searchResponse.status} | Details: ${JSON.stringify(searchData)}`);
-    }
-    
+    const searchData = await searchResponse.json();
+
     if (!searchData.value || searchData.value.length === 0) {
-      throw new Error(`Ticket 200 OK, but list is empty. Checked ID: [${reqId}]`);
+      throw new Error(`Ticket 200 OK, but list is empty. Checked ID: ${reqId}`);
     }
 
     const internalRecId = searchData.value[0].RecId;
 
-    // 5. UPDATE TICKET STATUS
-    const ivantiResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
+    // 3. Update the Ticket Status using the internal RecId
+    const ivantiResponse = await fetch(`https://${process.env.ivanti_tenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
       method: 'PATCH',
-      headers: ivantiHeaders,
+      headers: {
+        'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         Status: ivantiStatus
       })
     });
 
     if (!ivantiResponse.ok) {
-      const errorBody = await ivantiResponse.text();
-      throw new Error(`Ivanti PATCH failed. Status: ${ivantiResponse.status} | Details: ${errorBody}`);
+      const errorText = await ivantiResponse.text();
+      throw new Error(`Ivanti PATCH failed. Status: ${ivantiResponse.status} | Details: ${errorText}`);
     }
 
-    // 6. SEND INFOBIP NOTIFICATION
+    // 4. Send Employee Email
     if (user_email) {
       const emailFormData = new FormData();
       emailFormData.append("from", "IT Service Desk <notifications@procuri.tech>");
       emailFormData.append("to", user_email);
       emailFormData.append("templateId", templateId);
 
-      await fetch(`https://${cleanInfobipUrl}/email/3/send`, {
+      await fetch(`https://${process.env.infobip_base_url}/email/3/send`, {
         method: 'POST',
         headers: {
-          'Authorization': `App ${(process.env.infobip_api_key || '').trim()}`
+          'Authorization': `App ${process.env.infobip_api_key}`
         },
         body: emailFormData
       });
     }
 
-    // 7. SUCCESS SCREEN
+    // 5. Success Screen
     const htmlResponse = `
       <html>
         <head><title>Decision Logged</title></head>
@@ -104,6 +87,6 @@ module.exports = async function (req, res) {
 
   } catch (error) {
     console.error("Webhook Update Error:", error.message);
-    return res.status(500).send('Failed to process the request. Check Vercel logs for exact error.');
+    return res.status(500).send('Failed to process the request. Check Vercel logs.');
   }
 };
