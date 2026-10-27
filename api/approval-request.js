@@ -12,11 +12,14 @@ module.exports = async function (req, res) {
     const cleanIvantiTenant = (process.env.ivanti_tenant || '').replace(/^https?:\/\//, '');
     const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-    // 1. Search Ivanti for the Ticket (QUOTES REMOVED FROM reqId)
-    const searchResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=ServiceReqNumber eq ${reqId}`, {
+    // 1. Explicitly URL-encode the OData query exactly like Postman does
+    const filterQuery = encodeURIComponent(`ServiceReqNumber eq ${reqId}`);
+
+    // 2. Search Ivanti using the safely encoded URL
+    const searchResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=${filterQuery}`, {
       method: 'GET',
       headers: {
-        'Authorization': `${process.env.ivanti_api_key}`,
+        'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
         'Content-Type': 'application/json'
       }
     });
@@ -39,7 +42,7 @@ module.exports = async function (req, res) {
 
     const internalRecId = searchData.value[0].RecId;
 
-    // 2. Update the Ticket Status field
+    // 3. Update the Ticket Status field using the internal RecId
     const ivantiResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`, {
       method: 'PATCH',
       headers: {
@@ -56,7 +59,7 @@ module.exports = async function (req, res) {
       throw new Error(`Ivanti PATCH failed. Status: ${ivantiResponse.status} | Details: ${errorBody}`);
     }
 
-    // 3. Send Employee Email
+    // 4. Send Employee Email
     if (user_email) {
       const emailFormData = new FormData();
       emailFormData.append("from", "IT Service Desk <notifications@procuri.tech>");
@@ -72,7 +75,7 @@ module.exports = async function (req, res) {
       });
     }
 
-    // 4. Success Screen
+    // 5. Success Screen
     const htmlResponse = `
       <html>
         <head><title>Decision Logged</title></head>
@@ -89,6 +92,6 @@ module.exports = async function (req, res) {
 
   } catch (error) {
     console.error("Webhook Update Error:", error.message);
-    return res.status(500).send('Failed to process the request. Check Vercel logs for exact Ivanti error.');
+    return res.status(500).send('Failed to process the request. Check Vercel logs for exact error.');
   }
 };
