@@ -16,7 +16,7 @@ module.exports = async function (req, res) {
     const searchResponse = await fetch(`https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=ServiceReqNumber eq ${reqId}`, {
       method: 'GET',
       headers: {
-        'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
+        'Authorization': `${process.env.ivanti_api_key}`,
         'Content-Type': 'application/json'
       }
     });
