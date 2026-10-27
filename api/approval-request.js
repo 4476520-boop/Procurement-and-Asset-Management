@@ -14,10 +14,10 @@ module.exports = async function (req, res) {
 
   try {
     // 4. Fire the direct PATCH request to the Ivanti Neurons REST API
-    const ivantiResponse = await fetch(`https://{your-ivanti-tenant}.ivanticloud.com/api/odata/businessobject/ServiceReqs('${reqId}')`, {
+    const ivantiResponse = await fetch(`https://${process.env.ivanti_tenant}.ivanticloud.com/api/odata/businessobject/ServiceReqs('${reqId}')`, {
       method: 'PATCH',
       headers: {
-        'Authorization': `rest_api_key ${process.env.IVANTI_API_KEY}`,
+        'Authorization': `rest_api_key ${process.env.ivanti_api_key}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -37,10 +37,10 @@ module.exports = async function (req, res) {
       emailFormData.append("to", requester_email);
       emailFormData.append("templateId", templateId);
 
-      await fetch(`https://{your-infobip-base-url}/email/3/send`, {
+      await fetch(`https://${process.env.infobip_base_url}/email/3/send`, {
         method: 'POST',
         headers: {
-          'Authorization': `App ${process.env.INFOBIP_API_KEY}`
+          'Authorization': `App ${process.env.infobip_api_key}`
         },
         body: emailFormData
       });
