@@ -4,33 +4,107 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Procuri Solutions | Employee Portal</title>
+    
     <style>
+        /* Global Reset & Font */
         body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f7f6; }
-        header { background-color: #004b87; color: white; padding: 20px; text-align: center; }
-        .container { max-width: 800px; margin: 40px auto; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        h1 { margin: 0; }
-        p { color: #555; line-height: 1.6; }
+        
+        /* Banner Section - Styled with a dark corporate blue to match your new banner */
+        header { background-color: #1a296c; color: white; padding: 30px; text-align: center; border-bottom: 4px solid #d4af37; }
+        header h1 { margin: 0; font-size: 32px; letter-spacing: 1px; }
+        header p { color: #2dc49e; margin: 5px 0 0 0; font-size: 14px; font-weight: bold; }
+        
+        /* Container for the main page content */
+        .container { max-width: 900px; margin: 40px auto; padding: 20px; text-align: center; }
+        .container h2 { color: #333; margin-bottom: 10px; }
+        .container p { color: #555; line-height: 1.6; margin-bottom: 40px; }
+
+        /* Grid layout to hold the 3 action cards side-by-side */
+        .card-grid { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+        
+        /* Individual Card Styling */
+        .card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 40px 20px;
+            width: 240px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+            /* Changes cursor to a pointer so users know it is clickable */
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        /* Hover effect makes the card pop up slightly when hovered */
+        .card:hover { transform: translateY(-5px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); border-color: #1a296c; }
+        
+        /* Typography for the cards */
+        .card-icon { font-size: 45px; margin-bottom: 20px; }
+        .card h3 { margin: 0; font-size: 18px; color: #1a296c; }
     </style>
 </head>
 <body>
 
+    <!-- Corporate Header representing Procuri Solutions -->
+    <!-- You can also replace this entire block with an <img src="your-banner-url.jpg"> if you host the image file -->
     <header>
         <h1>Procuri Solutions</h1>
+        <p>- Smart Procurement. Strategic Growth.</p>
     </header>
 
+    <!-- Main Content Area -->
     <div class="container">
         <h2>Welcome to the Employee Service Portal</h2>
-        <p>Use the chat widget in the bottom right corner to request new hardware, check IT policies, or verify your asset collection.</p>
+        <p>Seamlessly request hardware, check ticket status, and manage your asset issuance & returns using our automated service.</p>
+        
+        <!-- The 3 Functional Cards -->
+        <div class="card-grid">
+            
+            <!-- Card 1: Procurement Request -->
+            <!-- The onclick event calls the custom openChatbot() function below -->
+            <div class="card" onclick="openChatbot()">
+                <div class="card-icon">💻</div>
+                <h3>Make a Procurement Request</h3>
+            </div>
+
+            <!-- Card 2: Check Request Status -->
+            <div class="card" onclick="openChatbot()">
+                <div class="card-icon">🔍</div>
+                <h3>Check Request Status</h3>
+            </div>
+
+            <!-- Card 3: Asset Issuance & Returns -->
+            <div class="card" onclick="openChatbot()">
+                <div class="card-icon">📦</div>
+                <h3>Asset Issuance & Returns</h3>
+            </div>
+
+        </div>
     </div>
 
+    <!-- Infobip Live Chat Integration Script -->
     <script>
+    // Asynchronous loader for the Infobip widget
     (function(I,n,f,o,b,i,p){
     I[b]=I[b]||function(){(I[b].q=I[b].q||[]).push(arguments)};
     I[b].t=1*new Date();i=n.createElement(f);i.async=1;i.src=o;
     p=n.getElementsByTagName(f)[0];p.parentNode.insertBefore(i,p)})
     (window,document,'script','https://livechat.infobip.com/widget.js','liveChat');
 
+    // Initializes your specific Infobip bot instance
+    // Note: Make sure you have updated the bot's name to "Procuri" and its avatar to the new robot inside your Infobip dashboard!
     liveChat('init', 'f1c17e40-5406-4378-b5a3-12128be1b0d4');
+
+    // Custom function triggered by clicking any of the 3 cards
+    function openChatbot() {
+        // Checks if the Infobip liveChat object is loaded and ready
+        if (typeof liveChat === 'function') {
+            // Uses the standard widget API command to force the chat window to open
+            liveChat('show');
+        } else {
+            console.log("Chatbot is still loading, please wait a moment.");
+        }
+    }
     </script>
 
 </body>
