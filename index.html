@@ -10,9 +10,21 @@
         body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f7f6; }
         
         /* Banner Section - Styled with a dark corporate blue to match your new banner */
-        header { background-color: #1a296c; color: white; padding: 30px; text-align: center; border-bottom: 4px solid #d4af37; }
-        header h1 { margin: 0; font-size: 32px; letter-spacing: 1px; }
-        header p { color: #2dc49e; margin: 5px 0 0 0; font-size: 14px; font-weight: bold; }
+        /* Replace the old 'header' CSS with this */
+        header { 
+            background-color: #1a296c; 
+            text-align: center; 
+            padding: 0; /* Removed padding so the image fits flush */
+            border-bottom: 4px solid #d4af37;
+        }
+        
+        header img {
+            width: 100%; /* Ensures it stretches nicely */
+            max-width: 1200px; /* Stops it from getting too massive on huge desktop screens */
+            height: auto;
+            display: block;
+            margin: 0 auto; /* Centers the image */
+        }
         
         /* Container for the main page content */
         .container { max-width: 900px; margin: 40px auto; padding: 20px; text-align: center; }
@@ -48,8 +60,7 @@
     <!-- Corporate Header representing Procuri Solutions -->
     <!-- You can also replace this entire block with an <img src="your-banner-url.jpg"> if you host the image file -->
     <header>
-        <h1>Procuri Solutions</h1>
-        <p>- Smart Procurement. Strategic Growth.</p>
+    <img src="procuri-banner.jpg" alt="Procuri Solutions - Smart Procurement">
     </header>
 
     <!-- Main Content Area -->
