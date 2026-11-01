@@ -77,14 +77,16 @@ module.exports = async function (req, res) {
       
       const emailFormData = new FormData();
       emailFormData.append("from", "IT Service Desk <notifications@procuri.tech>");
-      emailFormData.append("to", user_email);
       emailFormData.append("templateId", templateId);
 
-      const placeholders = JSON.stringify({
-        "full_name": safeUserName,
-        "Req_ID": cleanReqId
-      });
-      emailFormData.append("placeholders", placeholders);
+      const recipientData = JSON.stringify({
+          "to": user_email,
+          "placeholders": {
+            "full_name": safeUserName,
+            "Req_ID": cleanReqId
+          }
+        });
+        emailFormData.append("to", recipientData);
 
       await fetch(`https://${cleanInfobipUrl}/email/3/send`, {
         method: 'POST',
