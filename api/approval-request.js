@@ -81,7 +81,7 @@ module.exports = async function (req, res) {
       emailFormData.append("templateId", templateId);
 
       const placeholders = JSON.stringify({
-        "User_Name": safeUserName,
+        "full_name": safeUserName,
         "Req_ID": cleanReqId
       });
       emailFormData.append("placeholders", placeholders);
