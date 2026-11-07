@@ -10,6 +10,10 @@ module.exports = async function (req, res) {
   const validManagerToken = process.env.manager_token;
   const validCfoToken = process.env.cfo_token;
 
+  // Blocks any unrecognised roles
+  if (role !== 'manager' && role !== 'cfo') {
+    return res.status(401).send('Unauthorized: Unrecognized role signature.');
+
   if (role === 'manager' && token !== validManagerToken) {
     return res.status(401).send('Unauthorized: Invalid security signature.');
   }
@@ -53,7 +57,7 @@ module.exports = async function (req, res) {
     }
 
     let finalIvantiStatus = ivantiStatus;
-    if (currentStatus === 'Approved' || currentStatus === 'Approval Rejected') {
+    if (currentStatus === 'Approved' || currentStatus === 'Approval') {
       finalIvantiStatus = currentStatus; // Prevent race conditions
     }
 
