@@ -18,7 +18,7 @@ module.exports = async function (req, res) {
     // Define if this is a return flow based on the action
     const isReturn = action === 'In Stock' || action === 'Returned';
 
-    // 1. DYNAMIC LOOKUP: Pull Ticket & User ID (ONLY if issuing an asset)
+    // Pull Ticket & User ID (ONLY if issuing an asset)
     if (!isReturn && assignedEmail && !assignedEmail.includes('@')) {
       ticketNumber = assignedEmail;
       
@@ -38,7 +38,7 @@ module.exports = async function (req, res) {
       }
     }
 
-    // 2. Locate the Asset in Ivanti
+    //Locate the Asset in Ivanti
     const cleanBarcode = barcode.trim();
     const filterQuery = encodeURIComponent(`SerialNumber eq '${cleanBarcode}'`);
     const ivantiUrl = `https://dev-thinktanks.trysaasiteu.com/api/odata/businessobject/cis?$filter=${filterQuery}&$top=1`;
@@ -60,11 +60,10 @@ module.exports = async function (req, res) {
     const model = asset.Model || 'Device';
     const assetTag = asset.AssetTag || asset.ivnt_AssetTag || 'Unknown Tag';
 
-    // 3. Update the Asset in Ivanti (Status + Ownership)
     // 3. Update the Asset in Ivanti (Status + Ownership + Storage Space)
     const patchAssetBody = { Status: action };
     
-    // CRITICAL FIX: Clear the user AND set the Storage Space for returns
+    // Clear the user AND set the Storage Space for returns
     if (isReturn) {
         patchAssetBody.ivnt_AssignedUser = ""; 
         
