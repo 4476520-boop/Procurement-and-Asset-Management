@@ -1,41 +1,29 @@
 module.exports = async function (req, res) {
-  // 1. Cleaned up URL parameters (cfo_email is gone)
-  const { decision, reqId, user_email, user_name, approver_email } = req.query;
+  // 1. Cleaned URL catcher: No PII variables accepted
+  const { decision, reqId, role, token } = req.query;
 
-  if (!decision || !reqId) {
-    return res.status(400).send('Missing required approval parameters.');
+  if (!decision || !reqId || !role || !token) {
+    return res.status(400).send('Missing required security parameters.');
+  }
+
+  // 2. TOKEN AUTHORIZATION CHECK
+  const validManagerToken = process.env.manager_token;
+  const validCfoToken = process.env.cfo_token;
+
+  if (role === 'manager' && token !== validManagerToken) {
+    return res.status(401).send('Unauthorized: Invalid security signature.');
+  }
+  if (role === 'cfo' && token !== validCfoToken) {
+    return res.status(401).send('Unauthorized: Invalid security signature.');
   }
 
   const cleanReqId = reqId.trim();
-  const safeUserName = user_name || 'Valued Team Member'; 
+  const finalDecision = decision.toLowerCase();
   const cleanIvantiTenant = (process.env.ivanti_tenant || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
   const ivantiAuth = { 'Authorization': process.env.ivanti_api_key };
 
   try {
-    // 2. ZERO TRUST IDENTITY CHECK (Dynamic CFO Lookup)
-    const cfoQueryUrl = `https://${cleanIvantiTenant}/api/odata/businessobject/Employees?$filter=Title eq 'CFO'&$top=1`;
-    const cfoResponse = await fetch(cfoQueryUrl, { method: 'GET', headers: ivantiAuth });
-    const cfoData = await cfoResponse.json();
-
-    let validCfoEmail = null;
-    if (cfoData.value && cfoData.value.length > 0) {
-      validCfoEmail = cfoData.value[0].PrimaryEmail;
-    }
-
-    // Compare the person clicking against the true CFO record in Ivanti
-    const isCFO = approver_email && validCfoEmail && approver_email.toLowerCase() === validCfoEmail.toLowerCase();
-
-    // 3. MULTI-TIER STATUS LOGIC
-    let ivantiStatus;
-    if (decision !== 'approved') {
-      ivantiStatus = 'Approval Rejected';
-    } else if (isCFO) {
-      ivantiStatus = 'Approved';
-    } else {
-      ivantiStatus = 'Approval Pending'; 
-    }
-
-    // 4. FETCH CURRENT TICKET STATUS
+    // 3. FETCH THE TICKET FROM IVANTI FIRST
     const filterQuery = encodeURIComponent(`ServiceReqNumber eq ${cleanReqId}`);
     const searchUrl = `https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs?$filter=${filterQuery}&$top=1`;
 
@@ -50,13 +38,27 @@ module.exports = async function (req, res) {
     const internalRecId = currentTicket.RecId;
     const currentStatus = currentTicket.Status;
 
-    // RACE CONDITION CHECK
-    let finalIvantiStatus = ivantiStatus;
-    if (currentStatus === 'Approved' || currentStatus === 'Approval Rejected') {
-      finalIvantiStatus = currentStatus;
+    // 4. EXTRACT PII DIRECTLY FROM THE DATABASE
+    // Note: Verify the exact JSON keys Ivanti uses for Email and Name in your tenant
+    const user_email = currentTicket.Email; 
+    const safeUserName = currentTicket.ProfileFullName || 'Valued Team Member';
+
+    // 5. DETERMINE FINAL STATUS
+    let ivantiStatus;
+    if (finalDecision !== 'approved') {
+      ivantiStatus = 'Approval Rejected';
+    } else if (role === 'cfo') {
+      ivantiStatus = 'Approved';
+    } else if (role === 'manager') {
+      ivantiStatus = 'Approval Pending'; 
     }
 
-    // 5. PATCH TICKET
+    let finalIvantiStatus = ivantiStatus;
+    if (currentStatus === 'Approved' || currentStatus === 'Approval Rejected') {
+      finalIvantiStatus = currentStatus; // Prevent race conditions
+    }
+
+    // 6. PATCH TICKET
     if (currentStatus !== finalIvantiStatus) {
       const patchTicketUrl = `https://${cleanIvantiTenant}/api/odata/businessobject/ServiceReqs('${internalRecId}')`;
       const ivantiResponse = await fetch(patchTicketUrl, {
@@ -70,7 +72,7 @@ module.exports = async function (req, res) {
       }
     }
 
-    // 6. SEND FINAL NOTIFICATION EMAIL
+    // 7. SEND FINAL NOTIFICATION EMAIL
     if (user_email && (finalIvantiStatus === 'Approved' || finalIvantiStatus === 'Approval Rejected') && currentStatus !== finalIvantiStatus) {
       const templateId = finalIvantiStatus === 'Approved' ? '205000000088607' : '205000000088608';
       const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -80,13 +82,13 @@ module.exports = async function (req, res) {
       emailFormData.append("templateId", templateId);
 
       const recipientData = JSON.stringify({
-          "to": user_email,
-          "placeholders": {
-            "full_name": safeUserName,
-            "Req_ID": cleanReqId
-          }
-        });
-        emailFormData.append("to", recipientData);
+        "to": user_email,
+        "placeholders": {
+          "full_name": safeUserName,
+          "Req_ID": cleanReqId
+        }
+      });
+      emailFormData.append("to", recipientData);
 
       await fetch(`https://${cleanInfobipUrl}/email/3/send`, {
         method: 'POST',
@@ -95,7 +97,6 @@ module.exports = async function (req, res) {
       });
     }
 
-    // 7. RENDER SUCCESS SCREEN
     const htmlResponse = `
       <html>
         <head><title>Decision Logged</title></head>
