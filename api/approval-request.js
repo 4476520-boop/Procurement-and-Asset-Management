@@ -71,9 +71,10 @@ module.exports = async function (req, res) {
       }
     }
 
-    // 7. SEND FINAL NOTIFICATION EMAIL
+    // 7. SEND FINAL NOTIFICATION EMAIL (WITH AUTOMATIC RESEND FALLBACK)
     if (user_email && (finalIvantiStatus === 'Approved' || finalIvantiStatus === 'Approval Rejected') && currentStatus !== finalIvantiStatus) {
-      const templateId = finalIvantiStatus === 'Approved' ? '205000000088607' : '205000000088608';
+      const isApproved = finalIvantiStatus === 'Approved';
+      const templateId = isApproved ? '205000000088607' : '205000000088608';
       const cleanInfobipUrl = (process.env.infobip_base_url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
       
       const emailFormData = new FormData();
@@ -89,11 +90,59 @@ module.exports = async function (req, res) {
       });
       emailFormData.append("to", recipientData);
 
-      await fetch(`https://${cleanInfobipUrl}/email/3/send`, {
-        method: 'POST',
-        headers: { 'Authorization': `App ${process.env.infobip_api_key}` },
-        body: emailFormData
-      });
+      try {
+        // Attempt Primary Route (Infobip)
+        const infobipResponse = await fetch(`https://${cleanInfobipUrl}/email/3/send`, {
+          method: 'POST',
+          headers: { 'Authorization': `App ${process.env.infobip_api_key}` },
+          body: emailFormData
+        });
+
+        // If Infobip hits a limit, it returns a 4xx error. This forces the code into the catch block.
+        if (!infobipResponse.ok) {
+          throw new Error(`Infobip API blocked the request: ${infobipResponse.status}`);
+        }
+      } catch (fallbackError) {
+        console.log("Triggering Resend Fallback:", fallbackError.message);
+
+        // Dynamically build the body text matching your template screenshots
+        const bodyContent = isApproved
+          ? `<p>Your procurement request ${cleanReqId} has been approved.</p><p>The asset will be issued shortly.</p><p>Thank you for your patience.</p>` 
+          : `<p>Your procurement request: ${cleanReqId} has been rejected at this time.</p>`; 
+
+        // Construct the full HTML template
+        const fallbackHtml = `
+          <div style="font-family: 'Times New Roman', serif; max-width: 600px; margin: 0 auto; color: #000;">
+            <!-- Note: Host your header/footer images in Vercel's /public folder and paste the real URLs here -->
+            <img src="https://www.procuri.tech/procuri-banner.jpg" alt="Procuri Solutions" style="width: 100%; display: block;" />
+            <div style="padding: 20px; font-size: 16px; line-height: 1.5;">
+              <p>Dear ${safeUserName},</p>
+              ${bodyContent}
+              <br>
+              <p>Kind Regards<br>Asset Management</p>
+            </div>
+            <img src="https://www.procuri.tech/procuri-footer." alt="Procurement" style="width: 100%; display: block;" />
+            <div style="padding: 15px; font-family: Arial, sans-serif; font-size: 16px;">
+              <p>Want to change how you receive these emails? You can <a href="#" style="color: #0000EE; text-decoration: underline;">UNSUBSCRIBE</a> from this list.</p>
+            </div>
+          </div>
+        `;
+
+        // Dispatch via Resend API
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.resend_api_key}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'Procuri IT Support <itsupport@procuri.tech>',
+            to: user_email,
+            subject: isApproved ? 'Approved Asset Request' : 'Rejected Asset Request',
+            html: fallbackHtml
+          })
+        });
+      }
     }
 
     const htmlResponse = `
