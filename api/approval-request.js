@@ -100,7 +100,7 @@ module.exports = async function (req, res) {
       }
     }
 
-    // 7. SEND FINAL NOTIFICATION EMAIL (INFOBIP + RESEND FALLBACK)
+    // 7. SEND FINAL NOTIFICATION EMAIL (WITH TRIAL MODE TOGGLE)
     if (user_email && (finalIvantiStatus === 'Approved' || finalIvantiStatus === 'Approval Rejected') && currentStatus !== finalIvantiStatus) {
       const isApproved = finalIvantiStatus === 'Approved';
       const templateId = isApproved ? '205000000088607' : '205000000088608';
@@ -120,6 +120,11 @@ module.exports = async function (req, res) {
       emailFormData.append("to", recipientData);
 
       try {
+        // Toggle Switch: Instantly forces the catch block during the trial phase
+        if (process.env.infobip_trial_mode === 'true') {
+          throw new Error("Infobip Trial Mode active: Bypassing native API and routing to Resend.");
+        }
+
         // Attempt Primary Route (Infobip Native)
         const infobipResponse = await fetch(`https://${cleanInfobipUrl}/email/3/send`, {
           method: 'POST',
@@ -127,19 +132,10 @@ module.exports = async function (req, res) {
           body: emailFormData
         });
 
-        // 1. Check for standard HTTP errors
         if (!infobipResponse.ok) {
           throw new Error(`Infobip API blocked the request: ${infobipResponse.status}`);
         }
-
-        // 2. The Smart Check: Parse the JSON to catch "Silent" Trial Rejections
-        const infobipData = await infobipResponse.json();
-        const deliveryStatus = infobipData.messages?.[0]?.status?.groupName || '';
         
-        if (deliveryStatus === 'REJECTED') {
-          throw new Error("Infobip accepted the request but rejected the email payload (Trial Limits active).");
-        }
-
         console.log("Infobip Email Dispatched Successfully!");
 
       } catch (fallbackError) {
