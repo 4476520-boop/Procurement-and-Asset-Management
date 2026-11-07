@@ -39,7 +39,6 @@ module.exports = async function (req, res) {
     const currentStatus = currentTicket.Status;
 
     // 4. EXTRACT PII DIRECTLY FROM THE DATABASE
-    // Note: Verify the exact JSON keys Ivanti uses for Email and Name in your tenant
     const user_email = currentTicket.Email; 
     const safeUserName = currentTicket.ProfileFullName || 'Valued Team Member';
 
