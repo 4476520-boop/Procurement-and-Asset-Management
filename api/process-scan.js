@@ -118,25 +118,63 @@ module.exports = async function (req, res) {
         });
     }
 
-    // 5. Send Collection Email via Infobip (ONLY if issuing)
+    // SEND COLLECTION EMAIL (WITH TRIAL MODE TOGGLE & RESEND FALLBACK)
     if (!isReturn && assignedEmail && assignedEmail.includes('@')) {
         const infobipEmailUrl = `https://${process.env.infobip_base_url}/email/3/send`;
+        const ticketText = ticketNumber ? ` for request ${ticketNumber}` : '';
         
         const formData = new FormData();
-        formData.append('from', 'IT Support <it-support@yourdomain.com>'); 
+        formData.append('from', 'Procuri IT Support <itsupport@procuri.tech>'); 
         formData.append('to', assignedEmail);
         formData.append('subject', 'Hardware Ready for Collection');
-        
-        const ticketText = ticketNumber ? ` for ticket ${ticketNumber}` : '';
         formData.append('text', `Your IT hardware request${ticketText} has been fulfilled.\n\nAn ${manufacturer} ${model} (Asset Tag: ${assetTag}) is ready for collection at the IT Desk.`);
 
-        await fetch(infobipEmailUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `App ${process.env.infobip_api_key}`
-          },
-          body: formData
-        });
+        try {
+            // Check the exact same toggle variable we created earlier
+            if (process.env.infobip_trial_mode === 'true') {
+                throw new Error("Infobip Trial Mode active: Routing collection email to Resend.");
+            }
+
+            const infobipRes = await fetch(infobipEmailUrl, {
+                method: 'POST',
+                headers: { 'Authorization': `App ${process.env.infobip_api_key}` },
+                body: formData
+            });
+
+            if (!infobipRes.ok) {
+                throw new Error(`Infobip API error: ${infobipRes.status}`);
+            }
+        } catch (fallbackError) {
+            console.log("Triggering Resend Fallback for Collection:", fallbackError.message);
+
+            const fallbackHtml = `
+                <div style="font-family: 'Times New Roman', serif; max-width: 600px; margin: 0 auto; color: #000;">
+                    <img src="https://www.procuri.tech/procuri-banner.jpg" alt="Procuri Solutions" style="width: 100%; display: block;" />
+                    <div style="padding: 20px; font-size: 16px; line-height: 1.5;">
+                        <p>Hello,</p>
+                        <p>Your IT hardware request${ticketText} has been fulfilled.</p>
+                        <p>An <b>${manufacturer} ${model}</b> (Asset Tag: ${assetTag}) is ready for collection at the IT Desk.</p>
+                        <br>
+                        <p>Kind Regards<br>Procuri Support</p>
+                    </div>
+                    <img src="https://www.procuri.tech/procuri-footer.jpg" alt="Procurement" style="width: 100%; display: block;" />
+                </div>
+            `;
+
+            await fetch('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.resend_api_key}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    from: 'Procuri IT Support <itsupport@procuri.tech>',
+                    to: assignedEmail,
+                    subject: 'Hardware Ready for Collection',
+                    html: fallbackHtml
+                })
+            });
+        }
     }
 
     return res.status(200).json({ success: true });
