@@ -13,6 +13,7 @@ module.exports = async function (req, res) {
   // Blocks any unrecognised roles
   if (role !== 'manager' && role !== 'cfo') {
     return res.status(401).send('Unauthorized: Unrecognized role signature.');
+  } // <-- This was the missing closing brace
 
   if (role === 'manager' && token !== validManagerToken) {
     return res.status(401).send('Unauthorized: Invalid security signature.');
@@ -125,7 +126,7 @@ module.exports = async function (req, res) {
               <br>
               <p>Kind Regards<br>Asset Management</p>
             </div>
-            <img src="https://www.procuri.tech/procuri-footer." alt="Procurement" style="width: 100%; display: block;" />
+            <img src="https://www.procuri.tech/procuri-footer.jpg" alt="Procurement" style="width: 100%; display: block;" />
             <div style="padding: 15px; font-family: Arial, sans-serif; font-size: 16px;">
               <p>Want to change how you receive these emails? You can <a href="#" style="color: #0000EE; text-decoration: underline;">UNSUBSCRIBE</a> from this list.</p>
             </div>
