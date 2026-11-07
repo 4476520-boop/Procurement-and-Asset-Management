@@ -100,7 +100,7 @@ module.exports = async function (req, res) {
       }
     }
 
-    // 7. SEND FINAL NOTIFICATION EMAIL
+    // 7. SEND FINAL NOTIFICATION EMAIL (INFOBIP + RESEND FALLBACK)
     if (user_email && (finalIvantiStatus === 'Approved' || finalIvantiStatus === 'Approval Rejected') && currentStatus !== finalIvantiStatus) {
       const isApproved = finalIvantiStatus === 'Approved';
       const templateId = isApproved ? '205000000088607' : '205000000088608';
@@ -120,15 +120,28 @@ module.exports = async function (req, res) {
       emailFormData.append("to", recipientData);
 
       try {
+        // Attempt Primary Route (Infobip Native)
         const infobipResponse = await fetch(`https://${cleanInfobipUrl}/email/3/send`, {
           method: 'POST',
           headers: { 'Authorization': `App ${process.env.infobip_api_key}` },
           body: emailFormData
         });
 
+        // 1. Check for standard HTTP errors
         if (!infobipResponse.ok) {
           throw new Error(`Infobip API blocked the request: ${infobipResponse.status}`);
         }
+
+        // 2. The Smart Check: Parse the JSON to catch "Silent" Trial Rejections
+        const infobipData = await infobipResponse.json();
+        const deliveryStatus = infobipData.messages?.[0]?.status?.groupName || '';
+        
+        if (deliveryStatus === 'REJECTED') {
+          throw new Error("Infobip accepted the request but rejected the email payload (Trial Limits active).");
+        }
+
+        console.log("Infobip Email Dispatched Successfully!");
+
       } catch (fallbackError) {
         console.log("Triggering Resend Fallback:", fallbackError.message);
 
@@ -145,7 +158,7 @@ module.exports = async function (req, res) {
               <br>
               <p>Kind Regards<br>Asset Management</p>
             </div>
-            <img src="https://www.procuri.tech/procuri-footer.jpeg" alt="Procurement" style="width: 100%; display: block;" />
+            <img src="https://www.procuri.tech/procuri-footer.jpg" alt="Procurement" style="width: 100%; display: block;" />
             <div style="padding: 15px; font-family: Arial, sans-serif; font-size: 16px;">
               <p>Want to change how you receive these emails? You can <a href="#" style="color: #0000EE; text-decoration: underline;">UNSUBSCRIBE</a> from this list.</p>
             </div>
